@@ -71,6 +71,8 @@ func (ki *KustomizeImpersonation) GetClient(ctx context.Context) (client.Client,
 		return ki.clientForKubeConfig(ctx)
 	case ki.defaultServiceAccount != "" || ki.kustomization.Spec.ServiceAccountName != "":
 		return ki.clientForServiceAccountOrDefault()
+	case ki.kustomization.Spec.KubeConfig != nil && (ki.defaultServiceAccount != "" || ki.kustomization.Spec.ServiceAccountName != ""):
+		return ki.clientForKubeConfig(ctx)
 	default:
 		return ki.Client, ki.statusPoller, nil
 	}
@@ -150,6 +152,8 @@ func (ki *KustomizeImpersonation) clientForKubeConfig(ctx context.Context) (clie
 	restConfig = runtimeClient.KubeConfig(restConfig, ki.kubeConfigOpts)
 	ki.setImpersonationConfig(restConfig)
 
+	fmt.Println(restConfig)
+
 	restMapper, err := apiutil.NewDynamicRESTMapper(restConfig)
 	if err != nil {
 		return nil, nil, err
@@ -161,6 +165,57 @@ func (ki *KustomizeImpersonation) clientForKubeConfig(ctx context.Context) (clie
 	}
 
 	statusPoller := polling.NewStatusPoller(client, restMapper, polling.Options{})
+
+	return client, statusPoller, err
+}
+
+func (ki *KustomizeImpersonation) clientForKubeConfigAndServiceAccountOrDefault(ctx context.Context) (client.Client, *polling.StatusPoller, error) {
+	kubeConfigBytes, err := ki.getKubeConfig(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	restConfig, err := clientcmd.RESTConfigFromKubeConfig(kubeConfigBytes)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	restConfig = runtimeClient.KubeConfig(restConfig, ki.kubeConfigOpts)
+	ki.setImpersonationConfig(restConfig)
+
+	restMapper, err := apiutil.NewDynamicRESTMapper(restConfig)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	client, err := client.New(restConfig, client.Options{Mapper: restMapper})
+	if err != nil {
+		return nil, nil, err
+	}
+
+	statusPoller := polling.NewStatusPoller(client, restMapper, polling.Options{})
+
+	//return client, statusPoller, err
+
+	// AND
+
+	//restConfig, err := config.GetConfig()
+	//if err != nil {
+	//	return nil, nil, err
+	//}
+	//ki.setImpersonationConfig(restConfig)
+
+	//restMapper, err := apiutil.NewDynamicRESTMapper(restConfig)
+	//if err != nil {
+	//	return nil, nil, err
+	//}
+
+	//client, err := client.New(restConfig, client.Options{Mapper: restMapper})
+	//if err != nil {
+	//	return nil, nil, err
+	//}
+
+	//statusPoller := polling.NewStatusPoller(client, restMapper, polling.Options{})
 
 	return client, statusPoller, err
 }
